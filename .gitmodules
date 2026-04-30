@@ -1,0 +1,3 @@
+[submodule "gputt"]
+	path = gputt
+	url = https://github.com/ROCm/gputt.git
