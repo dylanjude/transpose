@@ -110,19 +110,29 @@ int main(int argc, char* argv[])
     CHECK_CUDA(cudaEventCreate(&ev0));
     CHECK_CUDA(cudaEventCreate(&ev1));
 
+    const int NITER = 10;
+
     // ---- transpose_cublas ----
-    CHECK_CUDA(cudaEventRecord(ev0));
-    transpose_cublas(cublas_handle, d_in, d_out, D0, D1, D2, D3);
-    CHECK_CUDA(cudaEventRecord(ev1));
-    CHECK_CUDA(cudaEventSynchronize(ev1));
-    report("cublas", elapsed_ms(ev0, ev1), N);
+    float cublas_ms = 0.0f;
+    for (int it = 0; it < NITER; ++it) {
+        CHECK_CUDA(cudaEventRecord(ev0));
+        transpose_cublas(cublas_handle, d_in, d_out, D0, D1, D2, D3);
+        CHECK_CUDA(cudaEventRecord(ev1));
+        CHECK_CUDA(cudaEventSynchronize(ev1));
+        cublas_ms += elapsed_ms(ev0, ev1);
+    }
+    report("cublas", cublas_ms / NITER, N);
 
     // ---- transpose_gputt ----
-    CHECK_CUDA(cudaEventRecord(ev0));
-    transpose_gputt(gputt_plan, d_in, d_out);
-    CHECK_CUDA(cudaEventRecord(ev1));
-    CHECK_CUDA(cudaEventSynchronize(ev1));
-    report("gputt", elapsed_ms(ev0, ev1), N);
+    float gputt_ms = 0.0f;
+    for (int it = 0; it < NITER; ++it) {
+        CHECK_CUDA(cudaEventRecord(ev0));
+        transpose_gputt(gputt_plan, d_in, d_out);
+        CHECK_CUDA(cudaEventRecord(ev1));
+        CHECK_CUDA(cudaEventSynchronize(ev1));
+        gputt_ms += elapsed_ms(ev0, ev1);
+    }
+    report("gputt", gputt_ms / NITER, N);
 
     // ---- verify first batch element against cublas reference ----
     // Reuse d_out: run cublas first, snapshot the slice, then run gputt and compare.
