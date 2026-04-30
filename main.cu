@@ -1,4 +1,5 @@
 #include <cuda_runtime.h>
+#include <cstring>
 #include <cublas_v2.h>
 #include <gputt.h>
 #include <cstdio>
@@ -61,10 +62,15 @@ __global__ void fill_kernel(double* data, long long n)
         data[idx] = (double)(idx % 10000) * 1e-4;
 }
 
-int main()
+int main(int argc, char* argv[])
 {
     // ---- dimensions ----
-    const int D0 = 6, D1 = 100, D2 = 32, D3 = 10648;
+    int D1 = 100;
+    for (int i = 1; i < argc - 1; ++i) {
+        if (strcmp(argv[i], "-nb") == 0)
+            D1 = atoi(argv[i + 1]);
+    }
+    const int D0 = 6, D2 = 32, D3 = 10648;
     const long long N = (long long)D0 * D1 * D2 * D3;
 
     printf("Input  shape: (%d, %d, %d, %d)  — %.1f MB\n",
