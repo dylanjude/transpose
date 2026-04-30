@@ -13,7 +13,7 @@
         }                                                                       \
     } while (0)
 
-void transpose_gputt(gputtHandle plan, const float* d_in, float* d_out)
+void transpose_gputt(gputtHandle plan, const double* d_in, double* d_out)
 {
     CHECK_GPUTT(gputtExecute(plan, d_in, d_out));
 }

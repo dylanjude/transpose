@@ -26,14 +26,14 @@
     } while (0)
 
 void transpose_cublas(cublasHandle_t handle,
-               const float*   d_in,   // row-major (d0, d1, d2, d3)
-               float*         d_out,  // row-major (d0, d1, d3, d2)
+               const double*   d_in,   // row-major (d0, d1, d2, d3)
+               double*         d_out,  // row-major (d0, d1, d3, d2)
                int d0, int d1, int d2, int d3)
 {
     int       batchCount = d0 * d1;
     long long stride     = (long long)d2 * d3;
 
-    const float alpha = 1.0f, beta = 0.0f;
+    const double alpha = 1.0, beta = 0.0;
 
     // cuBLAS is column-major. Interpret each row-major (d2 x d3) matrix
     // as a column-major (d3 x d2) matrix (lda = d3). The transposed
@@ -47,9 +47,9 @@ void transpose_cublas(cublasHandle_t handle,
     //
     // cublasSgeamBatched does not exist in cuBLAS; loop over individual calls.
     for (int b = 0; b < batchCount; ++b) {
-        const float* A = d_in  + b * stride;
-        float*       C = d_out + b * stride;
-        CHECK_CUBLAS(cublasSgeam(
+        const double* A = d_in  + b * stride;
+        double*       C = d_out + b * stride;
+        CHECK_CUBLAS(cublasDgeam(
             handle,
             CUBLAS_OP_T,   // transpose input
             CUBLAS_OP_N,   // op(B): irrelevant (beta = 0)

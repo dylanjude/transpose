@@ -46,19 +46,19 @@ static float elapsed_ms(cudaEvent_t start, cudaEvent_t stop)
     return ms;
 }
 
-static void report(const char* label, float ms, long long n_floats)
+static void report(const char* label, float ms, long long n_elems)
 {
-    double bytes     = 2.0 * n_floats * sizeof(float);  // read + write
+    double bytes     = 2.0 * n_elems * sizeof(double);  // read + write
     double bandwidth = bytes / (ms * 1e-3) / 1e9;
     printf("%-14s  %8.3f ms   %6.1f GB/s\n", label, ms, bandwidth);
 }
 
 // Fill: data[i] = (i % 10000) * 1e-4  (deterministic values in [0, 1))
-__global__ void fill_kernel(float* data, long long n)
+__global__ void fill_kernel(double* data, long long n)
 {
     long long idx = (long long)blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < n)
-        data[idx] = (float)(idx % 10000) * 1e-4f;
+        data[idx] = (double)(idx % 10000) * 1e-4;
 }
 
 int main()
@@ -68,14 +68,14 @@ int main()
     const long long N = (long long)D0 * D1 * D2 * D3;
 
     printf("Input  shape: (%d, %d, %d, %d)  — %.1f MB\n",
-           D0, D1, D2, D3, N * sizeof(float) / 1048576.0);
+           D0, D1, D2, D3, N * sizeof(double) / 1048576.0);
     printf("Output shape: (%d, %d, %d, %d)  — %.1f MB\n\n",
-           D0, D1, D3, D2, N * sizeof(float) / 1048576.0);
+           D0, D1, D3, D2, N * sizeof(double) / 1048576.0);
 
     // ---- allocate device buffers ----
-    float *d_in = nullptr, *d_out = nullptr;
-    CHECK_CUDA(cudaMalloc(&d_in,  N * sizeof(float)));
-    CHECK_CUDA(cudaMalloc(&d_out, N * sizeof(float)));
+    double *d_in = nullptr, *d_out = nullptr;
+    CHECK_CUDA(cudaMalloc(&d_in,  N * sizeof(double)));
+    CHECK_CUDA(cudaMalloc(&d_out, N * sizeof(double)));
 
     // ---- fill input ----
     const int THREADS = 256;
@@ -97,7 +97,7 @@ int main()
     int gputt_dim[4]  = {D3, D2, D1, D0};
     int gputt_perm[4] = {1, 0, 2, 3};
     CHECK_GPUTT(gputtPlan(&gputt_plan, 4, gputt_dim, gputt_perm,
-                          gputtDataTypeFloat32, /*stream=*/0));
+                          gputtDataTypeFloat64, /*stream=*/0));
 
     // ---- CUDA events for timing ----
     cudaEvent_t ev0, ev1;
@@ -119,25 +119,25 @@ int main()
     report("gputt", elapsed_ms(ev0, ev1), N);
 
     // ---- verify first batch element against cublas reference ----
-    // Re-run cublas into d_out, then gputt into a third buffer and compare.
-    float* d_ref = nullptr;
-    CHECK_CUDA(cudaMalloc(&d_ref, N * sizeof(float)));
-    transpose_cublas(cublas_handle, d_in, d_ref,  D0, D1, D2, D3);
-    transpose_gputt (gputt_plan,   d_in, d_out);
-    CHECK_CUDA(cudaDeviceSynchronize());
-
+    // Reuse d_out: run cublas first, snapshot the slice, then run gputt and compare.
     const int VERIFY_ELEMS = D2 * D3;
-    std::vector<float> h_ref(VERIFY_ELEMS), h_out(VERIFY_ELEMS);
-    CHECK_CUDA(cudaMemcpy(h_ref.data(), d_ref,  VERIFY_ELEMS * sizeof(float), cudaMemcpyDeviceToHost));
-    CHECK_CUDA(cudaMemcpy(h_out.data(), d_out,  VERIFY_ELEMS * sizeof(float), cudaMemcpyDeviceToHost));
+    std::vector<double> h_ref(VERIFY_ELEMS), h_out(VERIFY_ELEMS);
+
+    transpose_cublas(cublas_handle, d_in, d_out, D0, D1, D2, D3);
+    CHECK_CUDA(cudaDeviceSynchronize());
+    CHECK_CUDA(cudaMemcpy(h_ref.data(), d_out, VERIFY_ELEMS * sizeof(double), cudaMemcpyDeviceToHost));
+
+    transpose_gputt(gputt_plan, d_in, d_out);
+    CHECK_CUDA(cudaDeviceSynchronize());
+    CHECK_CUDA(cudaMemcpy(h_out.data(), d_out, VERIFY_ELEMS * sizeof(double), cudaMemcpyDeviceToHost));
 
     bool ok = true;
     int  errors = 0;
     for (int j = 0; j < D3 && errors < 10; ++j) {
         for (int i = 0; i < D2 && errors < 10; ++i) {
-            float ref = h_ref[j * D2 + i];
-            float got = h_out[j * D2 + i];
-            if (fabsf(ref - got) > 1e-6f) {
+            double ref = h_ref[j * D2 + i];
+            double got = h_out[j * D2 + i];
+            if (fabs(ref - got) > 1e-12) {
                 printf("  MISMATCH [0,0,%d,%d]: cublas=%.6f  gputt=%.6f\n", i, j, ref, got);
                 ok = false;
                 ++errors;
@@ -153,6 +153,6 @@ int main()
     CHECK_CUBLAS(cublasDestroy(cublas_handle));
     CHECK_CUDA(cudaFree(d_in));
     CHECK_CUDA(cudaFree(d_out));
-    CHECK_CUDA(cudaFree(d_ref));
+
     return ok ? 0 : 1;
 }
